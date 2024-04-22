@@ -80,7 +80,7 @@ class CLIPSeg:
         return {"required":
                     {
                         "image": ("IMAGE",),
-                        "text": ("STRING", {"multiline": False}),
+                        "text": ("STRING", {"multiline": True}),
                         
                      },
                 "optional":
@@ -92,8 +92,8 @@ class CLIPSeg:
                 }
 
     CATEGORY = "image"
-    RETURN_TYPES = ("MASK", "IMAGE", "IMAGE",)
-    RETURN_NAMES = ("Mask","Heatmap Mask", "BW Mask")
+    RETURN_TYPES = ("MASK", "IMAGE", "IMAGE", "BOOLEAN")
+    RETURN_NAMES = ("Mask", "Heatmap Mask", "BW Mask", "Mask Is Empty")
 
     FUNCTION = "segment_image"
     def segment_image(self, image: torch.Tensor, text: str, blur: float, threshold: float, dilation_factor: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -128,7 +128,8 @@ class CLIPSeg:
         with torch.no_grad():
             outputs = model(**input_prc)
         
-        tensor = torch.sigmoid(outputs[0]) # get the mask
+        preds = outputs.logits.unsqueeze(1)
+        tensor = torch.sigmoid(preds[0][0]) # get the mask
         
         # Apply a threshold to the original tensor to cut off low values
         thresh = threshold
@@ -170,8 +171,10 @@ class CLIPSeg:
         tensor_bw = np.array(tensor_bw).astype(np.float32) / 255.0
         tensor_bw = torch.from_numpy(tensor_bw)[None,]
         tensor_bw = tensor_bw.squeeze(0)[..., 0]
+        
+        mask_is_empty = torch.all(tensor_bw == 0)
 
-        return tensor_bw, image_out_heatmap, image_out_binary
+        return tensor_bw, image_out_heatmap, image_out_binary, mask_is_empty
 
     #OUTPUT_NODE = False
 

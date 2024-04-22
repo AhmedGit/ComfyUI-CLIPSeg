@@ -96,7 +96,7 @@ class CLIPSeg:
     RETURN_NAMES = ("Mask", "Heatmap Mask", "BW Mask", "Mask Is Empty")
 
     FUNCTION = "segment_image"
-    def segment_image(self, image: torch.Tensor, text: str, blur: float, threshold: float, dilation_factor: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def segment_image(self, image: torch.Tensor, text: str, blur: float, threshold: float, dilation_factor: int, use_cuda: bool) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Create a segmentation mask from an image and a text prompt using CLIPSeg.
 
         Args:
@@ -117,9 +117,13 @@ class CLIPSeg:
         # Create a PIL image from the numpy array
         i = Image.fromarray(image_np, mode="RGB")
 
+        # add CUDA support
+        device = torch.device("cuda" if torch.cuda.is_available() and use_cuda else "cpu")
+
         processor = CLIPSegProcessor.from_pretrained("CIDAS/clipseg-rd64-refined")
         model = CLIPSegForImageSegmentation.from_pretrained("CIDAS/clipseg-rd64-refined")
-        
+        model.to(device)
+
         prompt = text
         
         input_prc = processor(text=prompt, images=i, padding="max_length", return_tensors="pt")
@@ -172,6 +176,7 @@ class CLIPSeg:
         tensor_bw = torch.from_numpy(tensor_bw)[None,]
         tensor_bw = tensor_bw.squeeze(0)[..., 0]
         
+        # check if the mask is empty, and return is boolean value
         mask_is_empty = torch.all(tensor_bw == 0)
 
         return tensor_bw, image_out_heatmap, image_out_binary, mask_is_empty

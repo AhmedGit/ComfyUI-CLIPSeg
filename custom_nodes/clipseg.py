@@ -1,4 +1,6 @@
 from transformers import CLIPSegProcessor, CLIPSegForImageSegmentation
+import folder_paths
+import os
 
 from PIL import Image
 import torch
@@ -20,7 +22,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="torch")
 warnings.filterwarnings("ignore", category=UserWarning, module="safetensors")
 
-
+MODELS_DIR =  folder_paths.models_dir
 
 """Helper methods for CLIPSeg nodes"""
 
@@ -96,7 +98,7 @@ class CLIPSeg:
     RETURN_NAMES = ("Mask", "Heatmap Mask", "BW Mask", "Mask Is Empty")
 
     FUNCTION = "segment_image"
-    def segment_image(self, image: torch.Tensor, text: str, blur: float, threshold: float, dilation_factor: int, use_cuda: bool) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def segment_image(self, image: torch.Tensor, text: str, blur: float, threshold: float, dilation_factor: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Create a segmentation mask from an image and a text prompt using CLIPSeg.
 
         Args:
@@ -111,23 +113,30 @@ class CLIPSeg:
         """
             
         # Convert the Tensor to a PIL image
-        image_np = image.numpy().squeeze()  # Remove the first dimension (batch size of 1)
+        # image_np = image.numpy().squeeze()  # Remove the first dimension (batch size of 1)
         # Convert the numpy array back to the original range (0-255) and data type (uint8)
-        image_np = (image_np * 255).astype(np.uint8)
+        # image_np = (image_np * 255).astype(np.uint8)
+        
+        # Convert the Tensor to a PIL image
+        image_np = tensor_to_numpy(image)
         # Create a PIL image from the numpy array
         i = Image.fromarray(image_np, mode="RGB")
 
-        # add CUDA support
-        device = torch.device("cuda" if torch.cuda.is_available() and use_cuda else "cpu")
+        model_name = "CIDAS/clipseg-rd64-refined"
 
-        processor = CLIPSegProcessor.from_pretrained("CIDAS/clipseg-rd64-refined")
-        model = CLIPSegForImageSegmentation.from_pretrained("CIDAS/clipseg-rd64-refined")
-        model.to(device)
+        cache = os.path.join(MODELS_DIR, 'clipseg')
 
+        processor = CLIPSegProcessor.from_pretrained(model_name, cache_dir=cache)
+        model = CLIPSegForImageSegmentation.from_pretrained(model_name, cache_dir=cache)
+
+        # processor = CLIPSegProcessor.from_pretrained("CIDAS/clipseg-rd64-refined")
+        # model = CLIPSegForImageSegmentation.from_pretrained("CIDAS/clipseg-rd64-refined")
+        
         prompt = text
         
-        input_prc = processor(text=prompt, images=i, padding="max_length", return_tensors="pt")
-        
+        # input_prc = processor(text=prompt, images=i, padding="max_length", return_tensors="pt")
+        input_prc = processor(text=prompt, images=[i], return_tensors="pt")
+
         # Predict the segemntation mask
         with torch.no_grad():
             outputs = model(**input_prc)
@@ -176,7 +185,6 @@ class CLIPSeg:
         tensor_bw = torch.from_numpy(tensor_bw)[None,]
         tensor_bw = tensor_bw.squeeze(0)[..., 0]
         
-        # check if the mask is empty, and return is boolean value
         mask_is_empty = torch.all(tensor_bw == 0)
 
         return tensor_bw, image_out_heatmap, image_out_binary, mask_is_empty
